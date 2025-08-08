@@ -1,0 +1,41 @@
+syntax = "proto3";
+option csharp_namespace = "PaymentService.API.gRPC";
+
+package payment;
+
+service PaymentService {
+  rpc Quote (QuoteRequest) returns (QuoteResponse);
+  rpc CreateIntent (CreateIntentRequest) returns (PaymentIntentReply);
+  rpc Refund (RefundRequest) returns (RefundReply);
+}
+
+message QuoteRequest {
+  string roomId = 1;
+  string checkIn = 2;
+  string checkOut = 3;
+}
+
+message QuoteResponse {
+  double amount = 1;
+  string currency = 2;
+  string strategy = 3;
+}
+
+message CreateIntentRequest {
+  string bookingId = 1;
+  double amount = 2;
+  string currency = 3;
+}
+
+message PaymentIntentReply {
+  string intentId = 1;
+  string redirectUrl = 2;
+}
+
+message RefundRequest {
+  string bookingId = 1;
+}
+
+message RefundReply {
+  bool ok = 1;
+}
