@@ -6,4 +6,8 @@
   <ItemGroup>
     <Folder Include="Interfaces\" />
   </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Bookings.Common" Version="1.0.0" />
+    <PackageReference Include="Bookings.Contracts" Version="1.0.0" />
+  </ItemGroup>
 </Project>
