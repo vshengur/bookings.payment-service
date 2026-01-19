@@ -1,17 +1,18 @@
 using System;
 using System.Collections.Generic;
 using System.Text.Json;
+using Bookings.Common.ValueObjects;
 
 namespace PaymentService.Application.Builders
 {
     public class PaymentPayloadBuilder
     {
-        private readonly Dictionary<string, object?> _payload = new();
+        private readonly Dictionary<string, object?> _payload = [];
 
-        public PaymentPayloadBuilder Amount(decimal amount, string currency)
+        public PaymentPayloadBuilder Amount(Money money)
         {
-            _payload["amount"] = amount;
-            _payload["currency"] = currency;
+            _payload["amount"] = money.Amount;
+            _payload["currency"] = money.Currency;
             return this;
         }
 

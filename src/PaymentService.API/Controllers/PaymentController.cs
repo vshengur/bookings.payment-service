@@ -1,6 +1,4 @@
 using Microsoft.AspNetCore.Mvc;
-using PaymentService.Application.DTOs;
-using PaymentService.Application.Handlers;
 using PaymentService.Application.Builders;
 using PaymentService.Infrastructure.PSPClient;
 using PaymentService.Infrastructure.Persistence;
@@ -13,30 +11,18 @@ namespace PaymentService.API.Controllers
     [Route("payment")]
     public class PaymentController : ControllerBase
     {
-        private readonly QuoteHandler _quoteHandler;
         private readonly PaymentServiceProviderClient _psp;
         private readonly PaymentDbContext _db;
         private readonly IPublishEndpoint _bus;
 
         public PaymentController(
-            QuoteHandler quoteHandler,
             PaymentServiceProviderClient psp,
             PaymentDbContext db,
             IPublishEndpoint bus)
         {
-            _quoteHandler = quoteHandler;
             _psp = psp;
             _db = db;
             _bus = bus;
-        }
-
-        [HttpGet("quote")]
-        public ActionResult<QuoteResponse> Quote([FromQuery] Guid roomId, [FromQuery] DateOnly checkIn,
-                                                 [FromQuery] DateOnly checkOut)
-        {
-            // demo values for baseRate and occupancy
-            var resp = _quoteHandler.Handle(new QuoteRequest(roomId, checkIn, checkOut, 2, 0), 100, 85);
-            return Ok(resp);
         }
 
         [HttpPost("intent")]
@@ -44,7 +30,7 @@ namespace PaymentService.API.Controllers
         {
             var payload = new PaymentPayloadBuilder()
                           .OrderId(bookingId)
-                          .Amount(250, "EUR")
+                          .Amount(new Bookings.Common.ValueObjects.Money(250, "EUR"))
                           .ReturnUrl("https://example.com/return")
                           .Build();
             var json = await _psp.CreateIntentAsync(payload);
