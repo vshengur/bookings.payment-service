@@ -1,23 +1,23 @@
-﻿using Hangfire;
+using Hangfire;
+
 using Microsoft.EntityFrameworkCore;
 
 using PaymentService.Application;
+using PaymentService.Application.Configuration;
 using PaymentService.Infrastructure;
-
 using PaymentService.Infrastructure.Persistence;
 
 using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Serilog
 builder.Host.UseSerilog((ctx, cfg) =>
     cfg.ReadFrom.Configuration(ctx.Configuration)
        .Enrich.FromLogContext());
 
-// ───── переменные окружения / .env ─────
-var connStr = builder.Configuration.GetConnectionString("Db") 
+var connStr = builder.Configuration.GetConnectionString("Db")
            ?? builder.Configuration.GetConnectionString("Default");
+
 if (string.IsNullOrWhiteSpace(connStr))
 {
     throw new InvalidOperationException(
@@ -25,13 +25,24 @@ if (string.IsNullOrWhiteSpace(connStr))
         "Please set 'ConnectionStrings:Db' in appsettings.json or environment variable 'ConnectionStrings__Db'");
 }
 
-var rabbitMqHost = builder.Configuration["RabbitMq:Host"] ?? "localhost";
 var availabilityService = builder.Configuration["AvailabilityGrpc:Address"] ?? "http://availability:5001";
 
-// ───── Слои ─────
+builder.Services.Configure<PaymentSettings>(
+    builder.Configuration.GetSection(PaymentSettings.SectionName));
+
+builder.Services.Configure<PspSettings>(
+    builder.Configuration.GetSection(PspSettings.SectionName));
+
+builder.Services.Configure<RabbitMqSettings>(
+    builder.Configuration.GetSection(RabbitMqSettings.SectionName));
+
+var rabbitMq = builder.Configuration
+    .GetSection(RabbitMqSettings.SectionName)
+    .Get<RabbitMqSettings>() ?? new RabbitMqSettings();
+
 builder.Services
-        .AddApplication()
-        .AddInfrastructure(connStr, rabbitMqHost, availabilityService);
+    .AddApplication()
+    .AddInfrastructure(connStr, rabbitMq, availabilityService);
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
@@ -47,7 +58,6 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-// ───── применяем миграции ─────
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<PaymentDbContext>();
