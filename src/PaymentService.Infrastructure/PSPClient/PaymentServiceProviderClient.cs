@@ -5,7 +5,9 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
-using PaymentService.Application.Builders;
+using Microsoft.Extensions.Options;
+
+using PaymentService.Application.Configuration;
 
 namespace PaymentService.Infrastructure.PSPClient
 {
@@ -13,21 +15,25 @@ namespace PaymentService.Infrastructure.PSPClient
     {
         private readonly HttpClient _httpClient;
 
-        public PaymentServiceProviderClient(HttpClient http)
+        public PaymentServiceProviderClient(HttpClient http, IOptions<PspSettings> pspOptions)
         {
             _httpClient = http;
-            _httpClient.DefaultRequestHeaders.Add("X-Api-Key", "demo-key");
+
+            var settings = pspOptions.Value;
+            if (!string.IsNullOrWhiteSpace(settings.BaseUrl))
+                _httpClient.BaseAddress = new Uri(settings.BaseUrl);
+
+            _httpClient.DefaultRequestHeaders.Add("X-Api-Key", settings.ApiKey);
         }
 
         public async Task<string> CreateIntentAsync(string payloadJson, CancellationToken ct = default)
         {
             var res = await _httpClient.PostAsJsonAsync("/intents", JsonDocument.Parse(payloadJson), ct);
             res.EnsureSuccessStatusCode();
-            var json = await res.Content.ReadAsStringAsync(ct);
-            return json;
+            return await res.Content.ReadAsStringAsync(ct);
         }
 
-        public async Task<bool> RefundAsync(Guid intentId, decimal amount, CancellationToken ct = default)
+        public async Task<bool> RefundAsync(Guid intentId, long amount, CancellationToken ct = default)
         {
             var res = await _httpClient.PostAsJsonAsync($"/intents/{intentId}/refund", new { amount }, ct);
             return res.IsSuccessStatusCode;
