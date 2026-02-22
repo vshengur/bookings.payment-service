@@ -23,7 +23,7 @@ namespace PaymentService.Infrastructure.Persistence
 
             mb.Entity<PaymentIntent>(e =>
             {
-                e.HasIndex(p => p.BookingId);
+                e.HasIndex(p => p.BookingId).IsUnique();
                 e.Property(p => p.Currency).HasMaxLength(3);
                 e.Property(p => p.Status).HasMaxLength(32);
                 e.Property(p => p.ProviderRef).HasMaxLength(256);
