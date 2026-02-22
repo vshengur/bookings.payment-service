@@ -62,4 +62,54 @@ public class PspResponseParserTests
 
         result.Should().BeNull();
     }
+
+    [Test]
+    public void ExtractProviderRef_WithNumericId_ReturnsStringRepresentation()
+    {
+        var json = """{"id": 123456}""";
+
+        var result = PspResponseParser.ExtractProviderRef(json);
+
+        result.Should().Be("123456");
+    }
+
+    [Test]
+    public void ExtractProviderRef_WithObjectReference_ReturnsNull()
+    {
+        var json = """{"reference": {"nested": "value"}}""";
+
+        var result = PspResponseParser.ExtractProviderRef(json);
+
+        result.Should().BeNull();
+    }
+
+    [Test]
+    public void ExtractProviderRef_WithBooleanId_ReturnsStringRepresentation()
+    {
+        var json = """{"id": true}""";
+
+        var result = PspResponseParser.ExtractProviderRef(json);
+
+        result.Should().Be("true");
+    }
+
+    [Test]
+    public void ExtractProviderRef_WithNullId_FallsToReference()
+    {
+        var json = """{"id": null, "reference": "ref-fallback"}""";
+
+        var result = PspResponseParser.ExtractProviderRef(json);
+
+        result.Should().Be("ref-fallback");
+    }
+
+    [Test]
+    public void ExtractProviderRef_WithArrayId_ReturnsNull()
+    {
+        var json = """{"id": [1,2,3]}""";
+
+        var result = PspResponseParser.ExtractProviderRef(json);
+
+        result.Should().BeNull();
+    }
 }
