@@ -17,11 +17,13 @@ public class PaymentPayloadBuilderTests
         var bookingId = Guid.NewGuid();
         var money = new Money(250.00m, "EUR");
         var returnUrl = "https://example.com/return";
+        var cancelUrl = "https://example.com/cancel";
 
         var json = new PaymentPayloadBuilder()
             .OrderId(bookingId)
             .Amount(money)
             .ReturnUrl(returnUrl)
+            .CancelUrl(cancelUrl)
             .Build();
 
         var doc = JsonDocument.Parse(json);
@@ -31,6 +33,7 @@ public class PaymentPayloadBuilderTests
         root.GetProperty("amount").GetDecimal().Should().Be(250.00m);
         root.GetProperty("currency").GetString().Should().Be("EUR");
         root.GetProperty("returnUrl").GetString().Should().Be(returnUrl);
+        root.GetProperty("cancelUrl").GetString().Should().Be(cancelUrl);
     }
 
     [Test]
