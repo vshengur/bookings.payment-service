@@ -54,6 +54,42 @@ public class PaymentController : ControllerBase
         if (!validation.IsValid)
             return BadRequest(validation.Errors.Select(e => new { e.PropertyName, e.ErrorMessage }));
 
+        // Step 1: INSERT placeholder — claims BookingId uniqueness in DB
+        var intent = new PaymentIntent
+        {
+            Id = Guid.NewGuid(),
+            BookingId = request.BookingId,
+            Amount = request.Amount,
+            Currency = request.Currency.ToUpperInvariant(),
+            Status = "pending",
+            CreatedAt = DateTime.UtcNow,
+        };
+
+        _db.PaymentIntents.Add(intent);
+
+        try
+        {
+            await _db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException)
+        {
+            // BookingId conflict — another request won the race. No PSP call made.
+            _db.Entry(intent).State = EntityState.Detached;
+
+            var existing = await _db.PaymentIntents
+                .AsNoTracking()
+                .FirstAsync(i => i.BookingId == request.BookingId, ct);
+
+            _logger.LogInformation(
+                "PaymentIntent already exists for booking {BookingId}, returning existing {IntentId}",
+                request.BookingId, existing.Id);
+
+            return Ok(new CreatePaymentIntentResponse(
+                existing.Id, existing.BookingId, existing.Amount,
+                existing.Currency, existing.Status));
+        }
+
+        // Step 2: Uniqueness claimed — safe to call PSP
         string pspJson;
         try
         {
@@ -72,8 +108,11 @@ public class PaymentController : ControllerBase
         catch (HttpRequestException ex)
         {
             _logger.LogError(ex,
-                "PSP unavailable while creating intent for booking {BookingId}",
-                request.BookingId);
+                "PSP unavailable for booking {BookingId}, marking intent {IntentId} as failed",
+                request.BookingId, intent.Id);
+
+            intent.Status = "failed";
+            await _db.SaveChangesAsync(CancellationToken.None);
 
             return StatusCode(StatusCodes.Status503ServiceUnavailable, new
             {
@@ -84,8 +123,11 @@ public class PaymentController : ControllerBase
         catch (TaskCanceledException ex) when (!ct.IsCancellationRequested)
         {
             _logger.LogError(ex,
-                "PSP request timed out for booking {BookingId}",
-                request.BookingId);
+                "PSP request timed out for booking {BookingId}, marking intent {IntentId} as failed",
+                request.BookingId, intent.Id);
+
+            intent.Status = "failed";
+            await _db.SaveChangesAsync(CancellationToken.None);
 
             return StatusCode(StatusCodes.Status503ServiceUnavailable, new
             {
@@ -94,41 +136,10 @@ public class PaymentController : ControllerBase
             });
         }
 
-        var providerRef = PspResponseParser.ExtractProviderRef(pspJson);
-
-        var intent = new PaymentIntent
-        {
-            Id = Guid.NewGuid(),
-            BookingId = request.BookingId,
-            Amount = request.Amount,
-            Currency = request.Currency.ToUpperInvariant(),
-            Status = "pending",
-            ProviderRef = providerRef,
-            CreatedAt = DateTime.UtcNow,
-        };
-
-        _db.PaymentIntents.Add(intent);
-
-        try
-        {
-            await _db.SaveChangesAsync(ct);
-        }
-        catch (DbUpdateException)
-        {
-            _db.Entry(intent).State = EntityState.Detached;
-
-            var existing = await _db.PaymentIntents
-                .AsNoTracking()
-                .FirstAsync(i => i.BookingId == request.BookingId, ct);
-
-            _logger.LogInformation(
-                "PaymentIntent already exists for booking {BookingId}, returning existing {IntentId}",
-                request.BookingId, existing.Id);
-
-            return Ok(new CreatePaymentIntentResponse(
-                existing.Id, existing.BookingId, existing.Amount,
-                existing.Currency, existing.Status));
-        }
+        // Step 3: PSP succeeded — update placeholder with provider data
+        intent.ProviderRef = PspResponseParser.ExtractProviderRef(pspJson);
+        intent.Status = "created";
+        await _db.SaveChangesAsync(ct);
 
         _logger.LogInformation(
             "PaymentIntent {IntentId} created for booking {BookingId}, amount {Amount} {Currency}",
@@ -179,5 +190,4 @@ public class PaymentController : ControllerBase
 
         return Ok();
     }
-
 }
