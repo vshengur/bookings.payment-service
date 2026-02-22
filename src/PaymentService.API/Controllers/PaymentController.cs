@@ -9,6 +9,7 @@ using Microsoft.Extensions.Options;
 using PaymentService.Application.Builders;
 using PaymentService.Application.Configuration;
 using PaymentService.Application.DTOs;
+using PaymentService.Application.Helpers;
 using PaymentService.Application.Messages;
 using PaymentService.Infrastructure.Persistence;
 using PaymentService.Infrastructure.PSPClient;
@@ -53,26 +54,47 @@ public class PaymentController : ControllerBase
         if (!validation.IsValid)
             return BadRequest(validation.Errors.Select(e => new { e.PropertyName, e.ErrorMessage }));
 
-        var existing = await _db.PaymentIntents
-            .FirstOrDefaultAsync(i => i.BookingId == request.BookingId, ct);
-
-        if (existing is not null)
+        string pspJson;
+        try
         {
-            return Ok(new CreatePaymentIntentResponse(
-                existing.Id, existing.BookingId, existing.Amount,
-                existing.Currency, existing.Status));
+            var money = new Bookings.Common.ValueObjects.Money(
+                request.Amount / 100m, request.Currency);
+
+            var payload = new PaymentPayloadBuilder()
+                .OrderId(request.BookingId)
+                .Amount(money)
+                .ReturnUrl(_paymentSettings.ReturnUrl)
+                .CancelUrl(_paymentSettings.CancelUrl)
+                .Build();
+
+            pspJson = await _psp.CreateIntentAsync(payload, ct);
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogError(ex,
+                "PSP unavailable while creating intent for booking {BookingId}",
+                request.BookingId);
+
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new
+            {
+                Error = "Payment provider is temporarily unavailable.",
+                RetryAfterSeconds = 5
+            });
+        }
+        catch (TaskCanceledException ex) when (!ct.IsCancellationRequested)
+        {
+            _logger.LogError(ex,
+                "PSP request timed out for booking {BookingId}",
+                request.BookingId);
+
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new
+            {
+                Error = "Payment provider request timed out.",
+                RetryAfterSeconds = 10
+            });
         }
 
-        var money = new Bookings.Common.ValueObjects.Money(
-            request.Amount / 100m, request.Currency);
-
-        var payload = new PaymentPayloadBuilder()
-            .OrderId(request.BookingId)
-            .Amount(money)
-            .ReturnUrl(_paymentSettings.ReturnUrl)
-            .Build();
-
-        var pspJson = await _psp.CreateIntentAsync(payload, ct);
+        var providerRef = PspResponseParser.ExtractProviderRef(pspJson);
 
         var intent = new PaymentIntent
         {
@@ -81,11 +103,32 @@ public class PaymentController : ControllerBase
             Amount = request.Amount,
             Currency = request.Currency.ToUpperInvariant(),
             Status = "pending",
+            ProviderRef = providerRef,
             CreatedAt = DateTime.UtcNow,
         };
 
         _db.PaymentIntents.Add(intent);
-        await _db.SaveChangesAsync(ct);
+
+        try
+        {
+            await _db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException)
+        {
+            _db.Entry(intent).State = EntityState.Detached;
+
+            var existing = await _db.PaymentIntents
+                .AsNoTracking()
+                .FirstAsync(i => i.BookingId == request.BookingId, ct);
+
+            _logger.LogInformation(
+                "PaymentIntent already exists for booking {BookingId}, returning existing {IntentId}",
+                request.BookingId, existing.Id);
+
+            return Ok(new CreatePaymentIntentResponse(
+                existing.Id, existing.BookingId, existing.Amount,
+                existing.Currency, existing.Status));
+        }
 
         _logger.LogInformation(
             "PaymentIntent {IntentId} created for booking {BookingId}, amount {Amount} {Currency}",
@@ -136,4 +179,5 @@ public class PaymentController : ControllerBase
 
         return Ok();
     }
+
 }

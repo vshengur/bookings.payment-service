@@ -28,6 +28,12 @@ namespace PaymentService.Application.Builders
             return this;
         }
 
+        public PaymentPayloadBuilder CancelUrl(string url)
+        {
+            _payload["cancelUrl"] = url;
+            return this;
+        }
+
         public string Build() => JsonSerializer.Serialize(_payload);
     }
 }
