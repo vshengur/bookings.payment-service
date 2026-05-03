@@ -1,4 +1,4 @@
-﻿using Hangfire;
+using Hangfire;
 using Hangfire.PostgreSql;
 
 using MassTransit;
@@ -8,6 +8,7 @@ using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
+using PaymentService.Application.Configuration;
 using PaymentService.Application.Occupancy;
 using PaymentService.Infrastructure.Occupancy;
 using PaymentService.Infrastructure.Persistence;
@@ -25,26 +26,22 @@ public static class DependencyInjection
     public static IServiceCollection AddInfrastructure(
         this IServiceCollection services,
         string connectionString,
-        string rabbitMqHost,
+        RabbitMqSettings rabbitMq,
         string availabilityService)
     {
-        // Db
         services.AddDbContext<PaymentDbContext>(o => o
             .UseNpgsql(connectionString)
             .UseSnakeCaseNamingConvention());
 
-        // PSP client
         services
-            .AddHttpClient<PaymentServiceProviderClient>()            
+            .AddHttpClient<PaymentServiceProviderClient>()
             .AddPolicyHandler(PaymentRetryPolicy.Get());
 
-        // gRPC client to availability-service
         services.AddGrpcClient<Availability.AvailabilityServiceClient>(o =>
         {
             o.Address = new Uri(availabilityService);
         });
 
-        // IOccupancyService with caching decorator
         services.AddSingleton<IOccupancyService>(sp =>
         {
             var client = sp.GetRequiredService<Availability.AvailabilityServiceClient>();
@@ -54,25 +51,18 @@ public static class DependencyInjection
             return new CachedOccupancyService(core, cache, logger, TimeSpan.FromMinutes(5));
         });
 
-        //services.AddGrpc<PaymentV1.PaymentService>(o =>
-        //{
-        //    o.Address = new Uri();
-        //});
-
-        // MassTransit
         services.AddMassTransit(m =>
         {
             m.UsingRabbitMq((ctx, cfg) =>
             {
-                cfg.Host(rabbitMqHost, "/", h =>
+                cfg.Host(rabbitMq.Host, rabbitMq.VirtualHost, h =>
                 {
-                    h.Username("guest");
-                    h.Password("guest");
+                    h.Username(rabbitMq.Username);
+                    h.Password(rabbitMq.Password);
                 });
             });
         });
 
-        // Hangfire
         services.AddHangfire(cfg =>
         {
             cfg.SetDataCompatibilityLevel(CompatibilityLevel.Version_170)

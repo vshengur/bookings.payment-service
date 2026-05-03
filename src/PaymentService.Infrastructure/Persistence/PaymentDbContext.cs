@@ -20,6 +20,14 @@ namespace PaymentService.Infrastructure.Persistence
         protected override void OnModelCreating(ModelBuilder mb)
         {
             base.OnModelCreating(mb);
+
+            mb.Entity<PaymentIntent>(e =>
+            {
+                e.HasIndex(p => p.BookingId).IsUnique();
+                e.Property(p => p.Currency).HasMaxLength(3);
+                e.Property(p => p.Status).HasMaxLength(32);
+                e.Property(p => p.ProviderRef).HasMaxLength(256);
+            });
         }
 
         public override async Task<int> SaveChangesAsync(CancellationToken ct = default)
@@ -50,8 +58,10 @@ namespace PaymentService.Infrastructure.Persistence
     {
         public Guid Id { get; set; }
         public Guid BookingId { get; set; }
-        public decimal Amount { get; set; }
+        public long Amount { get; set; }
         public string Currency { get; set; } = "EUR";
         public string Status { get; set; } = "pending";
+        public string? ProviderRef { get; set; }
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     }
 }
