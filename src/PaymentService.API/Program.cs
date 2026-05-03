@@ -58,8 +58,9 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-using (var scope = app.Services.CreateScope())
+if (!app.Environment.IsEnvironment("Testing"))
 {
+    using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<PaymentDbContext>();
     db.Database.Migrate();
 }
@@ -68,3 +69,5 @@ app.MapControllers();
 app.MapHangfireDashboard("/hangfire");
 
 app.Run();
+
+public partial class Program;
